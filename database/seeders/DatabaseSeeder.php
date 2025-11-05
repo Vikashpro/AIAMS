@@ -7,6 +7,7 @@ use App\Models\Document;
 use App\Models\Listing;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
@@ -31,25 +32,41 @@ class DatabaseSeeder extends Seeder
         $education = $departments->firstWhere('slug', 'education-department');
         $health = $departments->firstWhere('slug', 'health-department');
 
-        $admin = User::factory()->create([
-            'name' => 'AI-AMS Admin',
-            'email' => 'admin@example.com',
-            'role' => User::ROLE_ADMIN,
-        ]);
+        $admin = User::updateOrCreate(
+            ['email' => 'admin@example.com'],
+            [
+                'name' => 'AI-AMS Admin',
+                'role' => User::ROLE_ADMIN,
+                'department_id' => null,
+                'password' => Hash::make('password'),
+            ]
+        );
 
-        $auditor = User::factory()->create([
-            'name' => 'Education Auditor',
-            'email' => 'auditor@example.com',
-            'role' => User::ROLE_AUDITOR,
-            'department_id' => optional($education)->id,
-        ]);
+        $auditor = User::updateOrCreate(
+            ['email' => 'auditor@example.com'],
+            [
+                'name' => 'Education Auditor',
+                'role' => User::ROLE_AUDITOR,
+                'department_id' => optional($education)->id,
+                'password' => Hash::make('password'),
+            ]
+        );
 
-        $officer = User::factory()->create([
-            'name' => 'Health Officer',
-            'email' => 'officer@example.com',
-            'role' => User::ROLE_OFFICER,
-            'department_id' => optional($health)->id,
-        ]);
+        $officer = User::updateOrCreate(
+            ['email' => 'officer@example.com'],
+            [
+                'name' => 'Health Officer',
+                'role' => User::ROLE_OFFICER,
+                'department_id' => optional($health)->id,
+                'password' => Hash::make('password'),
+            ]
+        );
+
+        collect([$admin, $auditor, $officer])->each(function (User $user): void {
+            if ($user->email_verified_at === null) {
+                $user->forceFill(['email_verified_at' => now()])->save();
+            }
+        });
 
         Listing::factory(5)->create([
             'by_user_id' => $admin->id,
