@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessDocumentForRag;
+use App\Jobs\SyncDocumentToSearch;
 use App\Models\Document;
 use App\Services\SummaryGenerator;
 use Illuminate\Http\RedirectResponse;
@@ -21,15 +23,14 @@ class DocumentSummaryController extends Controller
             abort(403);
         }
 
-        if (!$document->document_text) {
-            return back()->with('success', 'No document text available for summarization.');
-        }
-
-        $summary = $summaryGenerator->generate($document->document_text);
+        $summary = $summaryGenerator->generate($document);
 
         $document->summary = $summary;
         $document->status = Document::STATUS_SUMMARIZED;
         $document->save();
+
+        SyncDocumentToSearch::dispatchSync($document->id);
+        ProcessDocumentForRag::dispatchSync($document->id);
 
         $document->activities()->create([
             'user_id' => $user->id,

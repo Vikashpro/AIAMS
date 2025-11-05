@@ -2,76 +2,39 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessDocumentForRag;
+use App\Jobs\SyncDocumentToSearch;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentActivity;
+use App\Models\User;
+use App\Services\Search\ElasticsearchService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class DocumentController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, ElasticsearchService $search): Response
     {
         $user = $request->user();
+        $perPage = 10;
+        $filters = $request->only(['department_id', 'status', 'fiscal_year', 'keyword']);
 
-        $documents = Document::query()
-            ->with(['department:id,name', 'uploader:id,name'])
-            ->when($user->isAuditor() || $user->isOfficer(), function ($query) use ($user) {
-                if ($user->department_id) {
-                    $query->where('department_id', $user->department_id);
-                } elseif ($user->isOfficer()) {
-                    $query->whereNull('department_id');
-                }
-            })
-            ->when($request->filled('department_id'), function ($query) use ($request, $user) {
-                $departmentId = $request->integer('department_id');
+        $paginator = $this->resolvePaginator($request, $user, $search, $filters, $perPage);
 
-                if ($user->isAdmin() || $user->department_id === $departmentId) {
-                    $query->where('department_id', $departmentId);
-                }
-            })
-            ->when($request->filled('status'), function ($query) use ($request) {
-                $query->where('status', $request->string('status'));
-            })
-            ->when($request->filled('fiscal_year'), function ($query) use ($request) {
-                $query->where('fiscal_year', $request->string('fiscal_year'));
-            })
-            ->when($request->filled('keyword'), function ($query) use ($request) {
-                $keyword = '%' . $request->string('keyword') . '%';
-
-                $query->where(function ($nested) use ($keyword) {
-                    $nested
-                        ->where('title', 'like', $keyword)
-                        ->orWhere('summary', 'like', $keyword)
-                        ->orWhere('document_text', 'like', $keyword)
-                        ->orWhere('metadata', 'like', $keyword);
-                });
-            })
-            ->latest()
-            ->paginate(10)
-            ->withQueryString()
-            ->through(function (Document $document) {
-                return [
-                    'id' => $document->id,
-                    'title' => $document->title,
-                    'department' => $document->department?->name,
-                    'status' => $document->status,
-                    'fiscal_year' => $document->fiscal_year,
-                    'tags' => $document->tags,
-                    'updated_at' => $document->updated_at?->diffForHumans(),
-                    'summary' => Str::limit($document->summary, 180),
-                ];
-            });
+        $documents = $paginator->through(fn (Document $document) => $this->transformDocument($document));
 
         return Inertia::render('Documents/Index', [
             'documents' => $documents,
             'departments' => Department::query()->orderBy('name')->get(['id', 'name']),
-            'filters' => $request->only(['department_id', 'status', 'fiscal_year', 'keyword']),
+            'filters' => $filters,
             'statusOptions' => [
                 ['value' => Document::STATUS_MANUAL, 'label' => 'Manual'],
                 ['value' => Document::STATUS_PENDING_OCR, 'label' => 'Pending OCR'],
@@ -141,6 +104,9 @@ class DocumentController extends Controller
             'description' => 'Document uploaded',
         ]);
 
+        SyncDocumentToSearch::dispatchSync($document->id);
+        ProcessDocumentForRag::dispatchSync($document->id);
+
         return redirect()
             ->route('documents.show', $document)
             ->with('success', 'Document uploaded successfully.');
@@ -159,6 +125,7 @@ class DocumentController extends Controller
         }
 
         $document->load(['department:id,name', 'uploader:id,name', 'activities.user:id,name']);
+        $analysis = $request->session()->pull('analysis');
 
         return Inertia::render('Documents/Show', [
             'document' => [
@@ -186,6 +153,7 @@ class DocumentController extends Controller
                     'created_at' => $activity->created_at?->diffForHumans(),
                     'user' => $activity->user?->name,
                 ])->values(),
+            'analysis' => $analysis,
         ]);
     }
 
@@ -233,6 +201,9 @@ class DocumentController extends Controller
             'description' => 'Document updated',
         ]);
 
+        SyncDocumentToSearch::dispatchSync($document->id);
+        ProcessDocumentForRag::dispatchSync($document->id);
+
         return redirect()
             ->route('documents.show', $document)
             ->with('success', 'Document updated successfully.');
@@ -246,5 +217,74 @@ class DocumentController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    protected function resolvePaginator(Request $request, User $user, ElasticsearchService $search, array $filters, int $perPage): LengthAwarePaginator
+    {
+        $page = max(1, $request->integer('page', 1));
+
+        if ($search->isEnabled() && ($filters['keyword'] ?? null)) {
+            try {
+                return $search->searchDocuments($user, $filters, $page, $perPage);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $this->databasePaginator($user, $filters, $perPage);
+    }
+
+    protected function databasePaginator(User $user, array $filters, int $perPage): LengthAwarePaginator
+    {
+        return Document::query()
+            ->with(['department:id,name', 'uploader:id,name'])
+            ->when($user->isAuditor() || $user->isOfficer(), function ($query) use ($user) {
+                if ($user->department_id) {
+                    $query->where('department_id', $user->department_id);
+                } elseif ($user->isOfficer()) {
+                    $query->whereNull('department_id');
+                }
+            })
+            ->when($filters['department_id'] ?? null, function ($query, $departmentId) use ($user) {
+                $departmentId = (int) $departmentId;
+
+                if ($user->isAdmin() || $user->department_id === $departmentId) {
+                    $query->where('department_id', $departmentId);
+                }
+            })
+            ->when($filters['status'] ?? null, function ($query, $status) {
+                $query->where('status', $status);
+            })
+            ->when($filters['fiscal_year'] ?? null, function ($query, $fiscalYear) {
+                $query->where('fiscal_year', $fiscalYear);
+            })
+            ->when($filters['keyword'] ?? null, function ($query, $keyword) {
+                $like = '%' . $keyword . '%';
+
+                $query->where(function ($nested) use ($like) {
+                    $nested
+                        ->where('title', 'like', $like)
+                        ->orWhere('summary', 'like', $like)
+                        ->orWhere('document_text', 'like', $like)
+                        ->orWhere('metadata', 'like', $like);
+                });
+            })
+            ->latest()
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
+    protected function transformDocument(Document $document): array
+    {
+        return [
+            'id' => $document->id,
+            'title' => $document->title,
+            'department' => $document->department?->name,
+            'status' => $document->status,
+            'fiscal_year' => $document->fiscal_year,
+            'tags' => $document->tags,
+            'updated_at' => $document->updated_at?->diffForHumans(),
+            'summary' => Str::limit($document->summary, 180),
+        ];
     }
 }

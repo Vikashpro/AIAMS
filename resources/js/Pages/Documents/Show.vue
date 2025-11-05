@@ -117,7 +117,7 @@
       </aside>
     </section>
 
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md shadow-sm p-6">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Summary</h2>
         <p class="mt-2 text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
@@ -131,6 +131,58 @@
           {{ document.document_text || 'No text available yet.' }}
         </p>
       </div>
+      <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md shadow-sm p-6 flex flex-col gap-4">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">AI insights</h2>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Ask natural language questions about this record.</p>
+        </div>
+
+        <form @submit.prevent="askQuestion" class="space-y-3">
+          <div>
+            <label class="label">Question</label>
+            <textarea
+              v-model="analysisForm.question"
+              class="input"
+              rows="4"
+              placeholder="e.g. Highlight key audit issues and recommended actions"
+            ></textarea>
+            <FormError :message="analysisForm.errors.question" />
+          </div>
+          <div class="flex items-center gap-3">
+            <button type="submit" class="btn-primary" :disabled="analysisForm.processing">
+              <span v-if="analysisForm.processing">Analysing...</span>
+              <span v-else>Ask</span>
+            </button>
+            <span v-if="modelLabel" class="text-xs text-gray-400">Model: {{ modelLabel }}</span>
+          </div>
+        </form>
+
+        <div v-if="latestAnalysis" class="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">Latest response</h3>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300"><span class="font-semibold">Q:</span> {{ latestAnalysis.question }}</p>
+            <p class="mt-2 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">
+              <span class="font-semibold">A:</span> {{ latestAnalysis.answer }}
+            </p>
+          </div>
+          <div v-if="latestAnalysis.sources && latestAnalysis.sources.length" class="space-y-1">
+            <h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Sources</h4>
+            <ul class="space-y-2 text-xs text-gray-500 dark:text-gray-300">
+              <li
+                v-for="source in latestAnalysis.sources"
+                :key="source.chunk_index"
+                class="border border-dashed border-gray-200 dark:border-gray-700 rounded p-2"
+              >
+                <div class="font-semibold text-gray-700 dark:text-gray-200">
+                  Chunk {{ source.chunk_index }} • Score {{ formatScore(source.score) }}
+                </div>
+                <div class="mt-1 italic">{{ source.excerpt }}</div>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <p v-else class="text-sm text-gray-400 italic">Ask a question to generate an AI-backed insight.</p>
+      </div>
     </section>
   </section>
 </template>
@@ -143,6 +195,10 @@ import FormError from '@/Components/UI/FormError.vue'
 const props = defineProps({
   document: Object,
   activities: Array,
+  analysis: {
+    type: Object,
+    default: null,
+  },
 })
 
 const statusOptions = [
@@ -170,6 +226,10 @@ const form = useForm({
   document_text: props.document.document_text || '',
   summary: props.document.summary || '',
   status: props.document.status,
+})
+
+const analysisForm = useForm({
+  question: '',
 })
 
 watch(
@@ -202,6 +262,8 @@ const statusBadgeClass = computed(() => {
 })
 
 const summaryProcessing = ref(false)
+const latestAnalysis = ref(props.analysis ?? null)
+const modelLabel = computed(() => latestAnalysis.value?.model ?? '')
 
 const submit = () => {
   form.put(route('documents.update', { document: props.document.id }), {
@@ -217,5 +279,29 @@ const generateSummary = () => {
       summaryProcessing.value = false
     },
   })
+}
+
+const askQuestion = () => {
+  analysisForm.post(route('documents.analyze', { document: props.document.id }), {
+    preserveScroll: true,
+    onSuccess: () => {
+      analysisForm.reset('question')
+    },
+  })
+}
+
+watch(
+  () => props.analysis,
+  analysis => {
+    latestAnalysis.value = analysis ?? null
+  }
+)
+
+const formatScore = score => {
+  if (typeof score !== 'number') {
+    return score
+  }
+
+  return score.toFixed(3)
 }
 </script>

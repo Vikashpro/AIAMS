@@ -51,6 +51,11 @@ class Document extends Model
         return $this->hasMany(DocumentActivity::class);
     }
 
+    public function chunks(): HasMany
+    {
+        return $this->hasMany(DocumentChunk::class);
+    }
+
     public function getTagsAttribute(): array
     {
         $metadata = $this->metadata ?? [];
