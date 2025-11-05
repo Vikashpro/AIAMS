@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\IndexController;
 use App\Http\Controllers\ListingController;
+use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\DocumentSummaryController;
 use App\Http\Controllers\UserAccountController;
 use App\Http\Controllers\ListingOfferController;
 use App\Http\Controllers\NotificationController;
@@ -27,6 +29,13 @@ Route::resource('listing.offer', ListingOfferController::class)
 Route::resource('notification', NotificationController::class)
     ->middleware('auth')
     ->only(['index']);
+
+Route::middleware(['auth'])->group(function () {
+    Route::resource('documents', DocumentController::class)
+        ->only(['index', 'create', 'store', 'show', 'update']);
+    Route::post('documents/{document}/generate-summary', DocumentSummaryController::class)
+        ->name('documents.generate-summary');
+});
 
 Route::put(
     'notification/{notification}/seen',
