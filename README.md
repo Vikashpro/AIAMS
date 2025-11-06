@@ -1,69 +1,24 @@
-# AI-AMS MVP Support Files
+# AI-AMS MVP Notes
 
-This repository now includes a lightweight sample PDF you can use while testing the document upload workflow locally.
+This repository extends the original Laravel real-estate starter into an archival management MVP. Use the references below when setting up a local environment or demo.
 
-## Sample document
+## Quick start
+
+1. Install Composer and NPM dependencies.
+2. Copy `.env.example` to `.env`, configure your database, and run migrations with seeders.
+3. Link storage with `php artisan storage:link` and start the dev servers (`php artisan serve`, `npm run dev`).
+
+## Test sample document
+
+A single-page PDF is available for quick ingestion tests:
 
 - **Path:** `resources/examples/sample-document.pdf`
-- **Description:** Single-page placeholder with the title “AI-AMS Sample Document”.
+- **Usage:** Upload through the Documents → New page and apply any metadata or manual summary steps you want to try.
 
-To try it out in the UI:
+## Search + RAG setup
 
-1. Start your local environment and run the storage link command if you have not already:
-   ```bash
-   php artisan storage:link
-   ```
-2. Upload the sample PDF through the document upload form.
-3. Proceed with any metadata or summary steps required for your workflow.
+Detailed instructions for Elasticsearch, embeddings, and LLM configuration now live in [`docs/search-and-rag-setup.md`](docs/search-and-rag-setup.md). Moving the setup guide out of this file keeps the README short—which should reduce merge conflicts—while preserving all of the necessary operational detail.
 
-Feel free to duplicate or rename the file as needed when testing additional flows.
+## Need to sync with upstream?
 
-## Enabling search and AI-powered analysis
-
-The MVP can push document content into Elasticsearch and call an external LLM for summaries or Q&A once a few environment variables are supplied.
-
-### 1. Configure Elasticsearch
-
-Add these variables to your `.env` file:
-
-```ini
-ELASTICSEARCH_HOST=http://localhost:9200
-ELASTICSEARCH_INDEX=aiams_documents
-ELASTICSEARCH_USERNAME=
-ELASTICSEARCH_PASSWORD=
-ELASTICSEARCH_TIMEOUT=5
-```
-
-Start an Elasticsearch node (Docker example):
-
-```bash
-docker run --rm -p 9200:9200 -e "discovery.type=single-node" -e "xpack.security.enabled=false" docker.elastic.co/elasticsearch/elasticsearch:8.15.0
-```
-
-After updating `.env`, rebuild the config cache (`php artisan config:clear`). Documents are indexed automatically when they are created or updated. You can re-sync everything manually with:
-
-```bash
-php artisan search:reindex
-```
-
-### 2. Configure the LLM + embeddings provider
-
-Provide API credentials for the models you want to use (defaults assume OpenAI-compatible endpoints):
-
-```ini
-OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_CHAT_MODEL=gpt-4o-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_TEMPERATURE=0.2
-```
-
-When the keys are missing, the app still works with deterministic, local fallbacks so you can continue testing without external calls.
-
-### 3. Understand the processing workflow
-
-1. **Chunking & embeddings** – whenever a document’s text changes, the app creates overlapping text chunks and requests embeddings. Results are stored in the `document_chunks` table for reuse.
-2. **Search indexing** – the same save action re-indexes the document in Elasticsearch so full-text and faceted queries are handled through the cluster.
-3. **Summaries & analysis** – the “Generate draft summary” button or the new “Ask a question” form uses Retrieval-Augmented Generation (RAG) combining the stored chunks with your selected chat model. Outputs are logged as document activity entries for traceability.
-
-If Elasticsearch or the LLM is unreachable, the UI gracefully falls back to database queries and heuristic summaries so the MVP remains usable.
+If `git pull` warns about local README edits, either commit your changes or stash them before pulling. The concise README plus the dedicated docs folder should make future conflicts less likely.
