@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Document;
+use App\Services\Ingestion\DocumentTextExtractor;
 use App\Services\Search\ElasticsearchService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -21,7 +22,7 @@ class SyncDocumentToSearch implements ShouldQueue
     {
     }
 
-    public function handle(ElasticsearchService $search): void
+    public function handle(ElasticsearchService $search, DocumentTextExtractor $textExtractor): void
     {
         if (!$search->isEnabled()) {
             return;
@@ -33,6 +34,15 @@ class SyncDocumentToSearch implements ShouldQueue
             $search->deleteDocument($this->documentId);
 
             return;
+        }
+
+        if (blank($document->document_text)) {
+            $extracted = $textExtractor->extract('public', $document->file_path);
+
+            if ($extracted !== null) {
+                $document->document_text = $extracted;
+                $document->save();
+            }
         }
 
         $search->ensureIndexExists();

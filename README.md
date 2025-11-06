@@ -15,6 +15,8 @@ A single-page PDF is available for quick ingestion tests:
 - **Path:** `resources/examples/sample-document.pdf`
 - **Usage:** Upload through the Documents → New page and apply any metadata or manual summary steps you want to try.
 
+When no manual text is supplied, the uploader now attempts to pull readable text from PDFs and plain-text files automatically. For older uploads, run `php artisan search:reindex` after pulling the latest code to backfill extracted text and push it into Elasticsearch.
+
 ## Search + RAG setup
 
 Detailed instructions for Elasticsearch, embeddings, and LLM configuration now live in [`docs/search-and-rag-setup.md`](docs/search-and-rag-setup.md). Moving the setup guide out of this file keeps the README short—which should reduce merge conflicts—while preserving all of the necessary operational detail.

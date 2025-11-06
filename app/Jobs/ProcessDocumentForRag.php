@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Document;
 use App\Services\AI\DocumentChunkService;
+use App\Services\Ingestion\DocumentTextExtractor;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -21,12 +22,21 @@ class ProcessDocumentForRag implements ShouldQueue
     {
     }
 
-    public function handle(DocumentChunkService $chunkService): void
+    public function handle(DocumentChunkService $chunkService, DocumentTextExtractor $textExtractor): void
     {
         $document = Document::find($this->documentId);
 
         if (!$document) {
             return;
+        }
+
+        if (blank($document->document_text)) {
+            $extracted = $textExtractor->extract('public', $document->file_path);
+
+            if ($extracted !== null) {
+                $document->document_text = $extracted;
+                $document->save();
+            }
         }
 
         $chunkService->refresh($document);

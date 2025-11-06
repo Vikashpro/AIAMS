@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentActivity;
 use App\Models\User;
+use App\Services\Ingestion\DocumentTextExtractor;
 use App\Services\Search\ElasticsearchService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -56,7 +57,7 @@ class DocumentController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, DocumentTextExtractor $textExtractor): RedirectResponse
     {
         $user = $request->user();
 
@@ -80,17 +81,23 @@ class DocumentController extends Controller
 
         $departmentId = $data['department_id'] ?? $user->department_id;
 
-        $filePath = $request->file('file')->store('documents', 'public');
+        $file = $request->file('file');
+        $filePath = $file->store('documents', 'public');
+
+        $providedText = $data['document_text'] ?? null;
+        $extractedText = blank($providedText)
+            ? $textExtractor->extract('public', $filePath)
+            : $providedText;
         $document = new Document();
         $document->fill([
             'title' => $data['title'],
             'department_id' => $departmentId,
             'user_id' => $user->id,
-            'original_filename' => $request->file('file')->getClientOriginalName(),
+            'original_filename' => $file->getClientOriginalName(),
             'file_path' => $filePath,
-            'status' => $data['status'] ?? ($data['document_text'] ? Document::STATUS_MANUAL : Document::STATUS_PENDING_OCR),
+            'status' => $data['status'] ?? ($extractedText ? Document::STATUS_MANUAL : Document::STATUS_PENDING_OCR),
             'fiscal_year' => $data['fiscal_year'],
-            'document_text' => $data['document_text'] ?? null,
+            'document_text' => $extractedText,
         ]);
 
         $document->metadata = [
@@ -157,7 +164,7 @@ class DocumentController extends Controller
         ]);
     }
 
-    public function update(Request $request, Document $document): RedirectResponse
+    public function update(Request $request, Document $document, DocumentTextExtractor $textExtractor): RedirectResponse
     {
         $user = $request->user();
 
@@ -182,10 +189,16 @@ class DocumentController extends Controller
             ])],
         ]);
 
+        $documentText = $data['document_text'] ?? null;
+
+        if (blank($documentText)) {
+            $documentText = $document->document_text ?: $textExtractor->extract('public', $document->file_path);
+        }
+
         $document->fill([
             'title' => $data['title'],
             'fiscal_year' => $data['fiscal_year'],
-            'document_text' => $data['document_text'],
+            'document_text' => $documentText,
             'summary' => $data['summary'],
             'status' => $data['status'],
         ]);
