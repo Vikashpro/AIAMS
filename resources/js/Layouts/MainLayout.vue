@@ -3,7 +3,10 @@
     <div class="container mx-auto">
       <nav class="p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div class="flex items-center justify-between gap-4">
-          <Link :href="route('documents.index')" class="text-lg font-medium text-gray-700 dark:text-gray-200">Documents</Link>
+          <div class="flex items-center gap-4">
+            <Link :href="route('documents.index')" class="text-lg font-medium text-gray-700 dark:text-gray-200">Documents</Link>
+            <Link :href="route('documents.search')" class="text-lg font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Search</Link>
+          </div>
           <div class="text-xl text-indigo-600 dark:text-indigo-300 font-bold">
             <Link :href="route('documents.index')">AI-AMS</Link>
           </div>
