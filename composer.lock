@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2f07928f7ff84c3fb7a1197f51452548",
+    "content-hash": "c32b8e75847b62f13268d85767e415ff",
     "packages": [
         {
             "name": "brick/math",
@@ -3191,6 +3191,28 @@
                 }
             ],
             "time": "2024-04-27T21:32:50+00:00"
+        },
+        {
+            "name": "smalot/pdfparser",
+            "version": "dev-work",
+            "dist": {
+                "type": "path",
+                "url": "packages/smalot/pdfparser",
+                "reference": "e41ea661a9a0f3186a80989b1047c6f93082456e"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Smalot\\PdfParser\\": "src/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Lightweight PDF text extraction utilities (local fallback).",
+            "transport-options": {
+                "relative": true
+            }
         },
         {
             "name": "symfony/clock",
@@ -7978,12 +8000,17 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": [],
+    "stability-flags": {
+        "smalot/pdfparser": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
         "php": "^8.2"
     },
-    "platform-dev": [],
+    "platform-dev": {},
+    "platform-overrides": {
+        "php": "8.2.0"
+    },
     "plugin-api-version": "2.6.0"
 }

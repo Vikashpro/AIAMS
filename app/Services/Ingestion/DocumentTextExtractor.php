@@ -4,9 +4,14 @@ namespace App\Services\Ingestion;
 
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Smalot\PdfParser\Parser;
 
 class DocumentTextExtractor
 {
+    public function __construct(private Parser $pdfParser)
+    {
+    }
+
     public function extract(string $disk, string $path): ?string
     {
         $storage = Storage::disk($disk);
@@ -36,7 +41,22 @@ class DocumentTextExtractor
             return null;
         }
 
-        // Strip out binary streams to improve the odds of capturing text tokens.
+        try {
+            $document = $this->pdfParser->parseContent($contents);
+            $parsed = $this->normalize($document->getText());
+
+            if ($parsed !== null) {
+                return $parsed;
+            }
+        } catch (\Throwable $exception) {
+            // Fall through to the legacy token-based extraction below.
+        }
+
+        return $this->normalize($this->fallbackPdfExtraction($contents));
+    }
+
+    private function fallbackPdfExtraction(string $contents): ?string
+    {
         $contents = preg_replace('/stream.*?endstream/s', ' ', $contents) ?? $contents;
 
         preg_match_all('/\((?:\\.|[^\\()])*\)/s', $contents, $matches);
@@ -48,7 +68,7 @@ class DocumentTextExtractor
         $segments = array_map([$this, 'decodePdfString'], $matches[0]);
         $text = implode(' ', array_filter($segments));
 
-        return $this->normalize($text);
+        return $text === '' ? null : $text;
     }
 
     protected function decodePdfString(string $value): string
@@ -79,6 +99,10 @@ class DocumentTextExtractor
             return null;
         }
 
+        if (function_exists('mb_detect_encoding') && mb_detect_encoding($text, 'UTF-8', true) === false) {
+            return null;
+        }
+
         $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $text) ?? $text;
         $text = str_replace(["\r\n", "\r"], "\n", $text);
         $text = preg_replace('/[ \t]{2,}/u', ' ', $text) ?? $text;
@@ -86,6 +110,10 @@ class DocumentTextExtractor
         $text = trim($text);
 
         if ($text === '') {
+            return null;
+        }
+
+        if (function_exists('mb_detect_encoding') && mb_detect_encoding($text, 'UTF-8', true) === false) {
             return null;
         }
 
