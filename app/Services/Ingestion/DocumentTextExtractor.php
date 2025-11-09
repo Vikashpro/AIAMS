@@ -59,7 +59,7 @@ class DocumentTextExtractor
     {
         $contents = preg_replace('/stream.*?endstream/s', ' ', $contents) ?? $contents;
 
-        preg_match_all('/\((?:\\.|[^\\()])*\)/s', $contents, $matches);
+        preg_match_all('/\((?:\\.|[^\\()])*\)\s*(?=\s*(?:Tj|TJ|\'|\"))/s', $contents, $matches);
 
         if (empty($matches[0])) {
             return null;

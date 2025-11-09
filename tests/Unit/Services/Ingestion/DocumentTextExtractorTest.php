@@ -64,4 +64,36 @@ PDF;
         $this->assertSame('Hello UTF16', $text);
         $this->assertSame('UTF-8', mb_detect_encoding($text, 'UTF-8', true), 'Extracted text should be valid UTF-8.');
     }
+
+    public function testItIgnoresNoiseOutsideTextOperators(): void
+    {
+        if (!class_exists(\Smalot\PdfParser\Parser::class)) {
+            $this->markTestSkipped('smalot/pdfparser dependency is not available.');
+        }
+
+        $encodedPdf = <<<'PDF'
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxIC9LaWRzIFszIDAgUl0gPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAzMDAg
+MDBdIC9Db250ZW50cyBbNCAwIFIgNSAwIFJdIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDYg
+MCBSID4+ID4+ID4+CmVuZG9iago0IDAgb2JqCjw8IC9MZW5ndGggNzAgPj4Kc3RyZWFtCkJUCi9G
+MSAyNCBUZgoyOCA3MjAgVGQKKFByaW1hcnkgVGV4dCkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iago1
+IDAgb2JqCjw8IC9MZW5ndGggNDAgPj4Kc3RyZWFtCihyYW5kb20gbm9pc2UpICUgKG5vIHRleHQg
+b3BlcmF0b3IpCihCYWQgVG9rZW4pCmVuZHN0cmVhbQplbmRvYmoKNiAwIG9iago8PCAvVHlwZSAv
+Rm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCiUlRU9G
+PDF;
+
+        $pdfContents = base64_decode($encodedPdf, true);
+        $this->assertIsString($pdfContents, 'Fixture base64 encoding should decode to a string.');
+
+        Storage::fake('ingest-docs');
+        Storage::disk('ingest-docs')->put('noisy.pdf', $pdfContents);
+
+        $extractor = $this->app->make(DocumentTextExtractor::class);
+
+        $text = $extractor->extract('ingest-docs', 'noisy.pdf');
+
+        $this->assertSame('Primary Text', $text);
+        $this->assertSame('UTF-8', mb_detect_encoding($text, 'UTF-8', true), 'Extracted text should be valid UTF-8.');
+    }
 }

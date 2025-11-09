@@ -101,20 +101,85 @@ class Parser
             return '';
         }
 
-        $segments = [];
-        if (preg_match_all('/\((?:\\\\.|[^\\\\()])*\)/s', $contents, $matches)) {
-            foreach ($matches[0] as $segment) {
-                $segments[] = $this->decodePdfString($segment);
-            }
+        $operands = $this->collectTextOperands($contents);
+
+        if ($operands === []) {
+            return '';
         }
 
-        if (preg_match_all('/<([0-9A-Fa-f]+)>/', $contents, $hexMatches)) {
-            foreach ($hexMatches[1] as $hexString) {
-                $segments[] = $this->decodeHexString($hexString);
+        usort($operands, static function (array $left, array $right): int {
+            return $left['offset'] <=> $right['offset'];
+        });
+
+        $segments = [];
+
+        foreach ($operands as $operand) {
+            if ($operand['type'] === 'hex') {
+                $segments[] = $this->decodeHexString($operand['value']);
+                continue;
             }
+
+            $segments[] = $this->decodePdfString($operand['value']);
         }
 
         return trim(implode(' ', array_filter($segments)));
+    }
+
+    private function collectTextOperands(string $contents): array
+    {
+        $operands = [];
+
+        if (!preg_match_all('/BT\s*(.*?)\s*ET/s', $contents, $textBlocks, PREG_OFFSET_CAPTURE)) {
+            return $operands;
+        }
+
+        foreach ($textBlocks[1] as [$block, $blockOffset]) {
+            if (preg_match_all('/\((?:\\\\.|[^\\\\()])*\)\s*(?=\s*(?:Tj|TJ|\'|\"))/s', $block, $matches, PREG_OFFSET_CAPTURE)) {
+                foreach ($matches[0] as [$token, $offset]) {
+                    $operands[] = [
+                        'offset' => $blockOffset + $offset,
+                        'type' => 'string',
+                        'value' => trim($token),
+                    ];
+                }
+            }
+
+            if (preg_match_all('/<([0-9A-Fa-f]+)>\s*(?=\s*(?:Tj|TJ|\'|\"))/s', $block, $matches, PREG_OFFSET_CAPTURE)) {
+                foreach ($matches[1] as [$token, $offset]) {
+                    $operands[] = [
+                        'offset' => $blockOffset + $offset,
+                        'type' => 'hex',
+                        'value' => $token,
+                    ];
+                }
+            }
+
+            if (preg_match_all('/\[(.*?)\]\s*TJ/s', $block, $arrayMatches, PREG_OFFSET_CAPTURE)) {
+                foreach ($arrayMatches[1] as [$arrayContents, $arrayOffset]) {
+                    if (preg_match_all('/\((?:\\\\.|[^\\\\()])*\)/s', $arrayContents, $stringMatches, PREG_OFFSET_CAPTURE)) {
+                        foreach ($stringMatches[0] as [$token, $offset]) {
+                            $operands[] = [
+                                'offset' => $blockOffset + $arrayOffset + $offset,
+                                'type' => 'string',
+                                'value' => $token,
+                            ];
+                        }
+                    }
+
+                    if (preg_match_all('/<([0-9A-Fa-f]+)>/', $arrayContents, $hexMatches, PREG_OFFSET_CAPTURE)) {
+                        foreach ($hexMatches[1] as [$token, $offset]) {
+                            $operands[] = [
+                                'offset' => $blockOffset + $arrayOffset + $offset,
+                                'type' => 'hex',
+                                'value' => $token,
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return $operands;
     }
 
     private function decodePdfString(string $value): string
