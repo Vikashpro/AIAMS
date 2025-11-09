@@ -99,6 +99,10 @@ class DocumentTextExtractor
             return null;
         }
 
+        if (function_exists('mb_detect_encoding') && mb_detect_encoding($text, 'UTF-8', true) === false) {
+            return null;
+        }
+
         $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $text) ?? $text;
         $text = str_replace(["\r\n", "\r"], "\n", $text);
         $text = preg_replace('/[ \t]{2,}/u', ' ', $text) ?? $text;
@@ -106,6 +110,10 @@ class DocumentTextExtractor
         $text = trim($text);
 
         if ($text === '') {
+            return null;
+        }
+
+        if (function_exists('mb_detect_encoding') && mb_detect_encoding($text, 'UTF-8', true) === false) {
             return null;
         }
 
