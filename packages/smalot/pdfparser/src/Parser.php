@@ -165,13 +165,13 @@ class Parser
         if ($bom === "\xFE\xFF") {
             $value = substr($value, 2);
 
-            return mb_convert_encoding($value, 'UTF-8', 'UTF-16BE');
+            return $this->finalizeNormalized(mb_convert_encoding($value, 'UTF-8', 'UTF-16BE'));
         }
 
         if ($bom === "\xFF\xFE") {
             $value = substr($value, 2);
 
-            return mb_convert_encoding($value, 'UTF-8', 'UTF-16LE');
+            return $this->finalizeNormalized(mb_convert_encoding($value, 'UTF-8', 'UTF-16LE'));
         }
 
         $length = strlen($value);
@@ -195,20 +195,29 @@ class Parser
 
                 $encoding = $evenZeros >= $oddZeros ? 'UTF-16BE' : 'UTF-16LE';
 
-                return mb_convert_encoding($value, 'UTF-8', $encoding);
+                return $this->finalizeNormalized(mb_convert_encoding($value, 'UTF-8', $encoding));
             }
         }
 
         $encoding = mb_detect_encoding($value, ['UTF-8', 'Windows-1252', 'ISO-8859-1'], true);
 
         if ($encoding === false) {
-            $encoding = 'Windows-1252';
+            return '';
         }
 
-        if ($encoding === 'UTF-8') {
-            return $value;
+        if ($encoding !== 'UTF-8') {
+            $value = mb_convert_encoding($value, 'UTF-8', $encoding);
         }
 
-        return mb_convert_encoding($value, 'UTF-8', $encoding);
+        return $this->finalizeNormalized($value);
+    }
+
+    private function finalizeNormalized(string|false $value): string
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        return mb_detect_encoding($value, 'UTF-8', true) === false ? '' : $value;
     }
 }
