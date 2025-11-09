@@ -40,4 +40,28 @@ PDF;
 
         $this->assertSame('Hello Compressed World!', $text);
     }
+
+    public function testItExtractsUtf16HexEncodedTextFromPdf(): void
+    {
+        if (!class_exists(\Smalot\PdfParser\Parser::class)) {
+            $this->markTestSkipped('smalot/pdfparser dependency is not available.');
+        }
+
+        $encodedPdf = <<<'PDF'
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxIC9LaWRzIFszIDAgUl0gPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA4MCA+PgpzdHJlYW0KQlQKL0YxIDI0IFRmCjcyIDEyMCBUZAo8RkVGRjAwNDgwMDY1MDA2QzAwNkMwMDZGMDAyMDAwNTUwMDU0MDA0NjAwMzEwMDM2PiBUagpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDM3MCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjQ0MAolJUVPRg==
+PDF;
+
+        $pdfContents = base64_decode($encodedPdf, true);
+        $this->assertIsString($pdfContents, 'Fixture base64 encoding should decode to a string.');
+
+        Storage::fake('ingest-docs');
+        Storage::disk('ingest-docs')->put('utf16-hex.pdf', $pdfContents);
+
+        $extractor = $this->app->make(DocumentTextExtractor::class);
+
+        $text = $extractor->extract('ingest-docs', 'utf16-hex.pdf');
+
+        $this->assertSame('Hello UTF16', $text);
+        $this->assertSame('UTF-8', mb_detect_encoding($text, 'UTF-8', true), 'Extracted text should be valid UTF-8.');
+    }
 }

@@ -135,7 +135,9 @@ class Parser
             '\\\\' => '\\',
         ];
 
-        return strtr($value, $replacements);
+        $value = strtr($value, $replacements);
+
+        return $this->normalizeEncoding($value);
     }
 
     private function decodeHexString(string $value): string
@@ -149,6 +151,64 @@ class Parser
             $decoded .= chr(hexdec(substr($value, $i, 2)));
         }
 
-        return $decoded;
+        return $this->normalizeEncoding($decoded);
+    }
+
+    private function normalizeEncoding(string $value): string
+    {
+        if ($value === '') {
+            return $value;
+        }
+
+        $bom = substr($value, 0, 2);
+
+        if ($bom === "\xFE\xFF") {
+            $value = substr($value, 2);
+
+            return mb_convert_encoding($value, 'UTF-8', 'UTF-16BE');
+        }
+
+        if ($bom === "\xFF\xFE") {
+            $value = substr($value, 2);
+
+            return mb_convert_encoding($value, 'UTF-8', 'UTF-16LE');
+        }
+
+        $length = strlen($value);
+
+        if ($length >= 2) {
+            $zeroCount = substr_count($value, "\x00");
+
+            if ($zeroCount >= ($length / 4)) {
+                $evenZeros = 0;
+                $oddZeros = 0;
+
+                for ($i = 0; $i < $length; $i++) {
+                    if ($value[$i] === "\x00") {
+                        if (($i % 2) === 0) {
+                            ++$evenZeros;
+                        } else {
+                            ++$oddZeros;
+                        }
+                    }
+                }
+
+                $encoding = $evenZeros >= $oddZeros ? 'UTF-16BE' : 'UTF-16LE';
+
+                return mb_convert_encoding($value, 'UTF-8', $encoding);
+            }
+        }
+
+        $encoding = mb_detect_encoding($value, ['UTF-8', 'Windows-1252', 'ISO-8859-1'], true);
+
+        if ($encoding === false) {
+            $encoding = 'Windows-1252';
+        }
+
+        if ($encoding === 'UTF-8') {
+            return $value;
+        }
+
+        return mb_convert_encoding($value, 'UTF-8', $encoding);
     }
 }
