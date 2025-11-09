@@ -6,6 +6,7 @@ use App\Policies\NotificationPolicy;
 use Gate;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\ServiceProvider;
+use Smalot\PdfParser\Parser;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -14,7 +15,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(Parser::class, static fn (): Parser => new Parser());
     }
 
     /**

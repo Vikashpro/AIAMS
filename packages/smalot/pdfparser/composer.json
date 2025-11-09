@@ -1,0 +1,11 @@
+{
+    "name": "smalot/pdfparser",
+    "description": "Lightweight PDF text extraction utilities (local fallback).",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Smalot\\PdfParser\\": "src/"
+        }
+    }
+}
