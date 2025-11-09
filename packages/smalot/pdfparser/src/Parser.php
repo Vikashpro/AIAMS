@@ -101,20 +101,85 @@ class Parser
             return '';
         }
 
-        $segments = [];
-        if (preg_match_all('/\((?:\\\\.|[^\\\\()])*\)/s', $contents, $matches)) {
-            foreach ($matches[0] as $segment) {
-                $segments[] = $this->decodePdfString($segment);
-            }
+        $operands = $this->collectTextOperands($contents);
+
+        if ($operands === []) {
+            return '';
         }
 
-        if (preg_match_all('/<([0-9A-Fa-f]+)>/', $contents, $hexMatches)) {
-            foreach ($hexMatches[1] as $hexString) {
-                $segments[] = $this->decodeHexString($hexString);
+        usort($operands, static function (array $left, array $right): int {
+            return $left['offset'] <=> $right['offset'];
+        });
+
+        $segments = [];
+
+        foreach ($operands as $operand) {
+            if ($operand['type'] === 'hex') {
+                $segments[] = $this->decodeHexString($operand['value']);
+                continue;
             }
+
+            $segments[] = $this->decodePdfString($operand['value']);
         }
 
         return trim(implode(' ', array_filter($segments)));
+    }
+
+    private function collectTextOperands(string $contents): array
+    {
+        $operands = [];
+
+        if (!preg_match_all('/BT\s*(.*?)\s*ET/s', $contents, $textBlocks, PREG_OFFSET_CAPTURE)) {
+            return $operands;
+        }
+
+        foreach ($textBlocks[1] as [$block, $blockOffset]) {
+            if (preg_match_all('/\((?:\\\\.|[^\\\\()])*\)\s*(?=\s*(?:Tj|TJ|\'|\"))/s', $block, $matches, PREG_OFFSET_CAPTURE)) {
+                foreach ($matches[0] as [$token, $offset]) {
+                    $operands[] = [
+                        'offset' => $blockOffset + $offset,
+                        'type' => 'string',
+                        'value' => trim($token),
+                    ];
+                }
+            }
+
+            if (preg_match_all('/<([0-9A-Fa-f]+)>\s*(?=\s*(?:Tj|TJ|\'|\"))/s', $block, $matches, PREG_OFFSET_CAPTURE)) {
+                foreach ($matches[1] as [$token, $offset]) {
+                    $operands[] = [
+                        'offset' => $blockOffset + $offset,
+                        'type' => 'hex',
+                        'value' => $token,
+                    ];
+                }
+            }
+
+            if (preg_match_all('/\[(.*?)\]\s*TJ/s', $block, $arrayMatches, PREG_OFFSET_CAPTURE)) {
+                foreach ($arrayMatches[1] as [$arrayContents, $arrayOffset]) {
+                    if (preg_match_all('/\((?:\\\\.|[^\\\\()])*\)/s', $arrayContents, $stringMatches, PREG_OFFSET_CAPTURE)) {
+                        foreach ($stringMatches[0] as [$token, $offset]) {
+                            $operands[] = [
+                                'offset' => $blockOffset + $arrayOffset + $offset,
+                                'type' => 'string',
+                                'value' => $token,
+                            ];
+                        }
+                    }
+
+                    if (preg_match_all('/<([0-9A-Fa-f]+)>/', $arrayContents, $hexMatches, PREG_OFFSET_CAPTURE)) {
+                        foreach ($hexMatches[1] as [$token, $offset]) {
+                            $operands[] = [
+                                'offset' => $blockOffset + $arrayOffset + $offset,
+                                'type' => 'hex',
+                                'value' => $token,
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return $operands;
     }
 
     private function decodePdfString(string $value): string
@@ -135,7 +200,9 @@ class Parser
             '\\\\' => '\\',
         ];
 
-        return strtr($value, $replacements);
+        $value = strtr($value, $replacements);
+
+        return $this->normalizeEncoding($value);
     }
 
     private function decodeHexString(string $value): string
@@ -149,6 +216,73 @@ class Parser
             $decoded .= chr(hexdec(substr($value, $i, 2)));
         }
 
-        return $decoded;
+        return $this->normalizeEncoding($decoded);
+    }
+
+    private function normalizeEncoding(string $value): string
+    {
+        if ($value === '') {
+            return $value;
+        }
+
+        $bom = substr($value, 0, 2);
+
+        if ($bom === "\xFE\xFF") {
+            $value = substr($value, 2);
+
+            return $this->finalizeNormalized(mb_convert_encoding($value, 'UTF-8', 'UTF-16BE'));
+        }
+
+        if ($bom === "\xFF\xFE") {
+            $value = substr($value, 2);
+
+            return $this->finalizeNormalized(mb_convert_encoding($value, 'UTF-8', 'UTF-16LE'));
+        }
+
+        $length = strlen($value);
+
+        if ($length >= 2) {
+            $zeroCount = substr_count($value, "\x00");
+
+            if ($zeroCount >= ($length / 4)) {
+                $evenZeros = 0;
+                $oddZeros = 0;
+
+                for ($i = 0; $i < $length; $i++) {
+                    if ($value[$i] === "\x00") {
+                        if (($i % 2) === 0) {
+                            ++$evenZeros;
+                        } else {
+                            ++$oddZeros;
+                        }
+                    }
+                }
+
+                $encoding = $evenZeros >= $oddZeros ? 'UTF-16BE' : 'UTF-16LE';
+
+                return $this->finalizeNormalized(mb_convert_encoding($value, 'UTF-8', $encoding));
+            }
+        }
+
+        $encoding = mb_detect_encoding($value, ['UTF-8', 'Windows-1252', 'ISO-8859-1'], true);
+
+        if ($encoding === false) {
+            return '';
+        }
+
+        if ($encoding !== 'UTF-8') {
+            $value = mb_convert_encoding($value, 'UTF-8', $encoding);
+        }
+
+        return $this->finalizeNormalized($value);
+    }
+
+    private function finalizeNormalized(string|false $value): string
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        return mb_detect_encoding($value, 'UTF-8', true) === false ? '' : $value;
     }
 }
