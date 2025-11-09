@@ -4,9 +4,14 @@ namespace App\Services\Ingestion;
 
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Smalot\PdfParser\Parser;
 
 class DocumentTextExtractor
 {
+    public function __construct(private Parser $pdfParser)
+    {
+    }
+
     public function extract(string $disk, string $path): ?string
     {
         $storage = Storage::disk($disk);
@@ -36,7 +41,22 @@ class DocumentTextExtractor
             return null;
         }
 
-        // Strip out binary streams to improve the odds of capturing text tokens.
+        try {
+            $document = $this->pdfParser->parseContent($contents);
+            $parsed = $this->normalize($document->getText());
+
+            if ($parsed !== null) {
+                return $parsed;
+            }
+        } catch (\Throwable $exception) {
+            // Fall through to the legacy token-based extraction below.
+        }
+
+        return $this->normalize($this->fallbackPdfExtraction($contents));
+    }
+
+    private function fallbackPdfExtraction(string $contents): ?string
+    {
         $contents = preg_replace('/stream.*?endstream/s', ' ', $contents) ?? $contents;
 
         preg_match_all('/\((?:\\.|[^\\()])*\)/s', $contents, $matches);
@@ -48,7 +68,7 @@ class DocumentTextExtractor
         $segments = array_map([$this, 'decodePdfString'], $matches[0]);
         $text = implode(' ', array_filter($segments));
 
-        return $this->normalize($text);
+        return $text === '' ? null : $text;
     }
 
     protected function decodePdfString(string $value): string
