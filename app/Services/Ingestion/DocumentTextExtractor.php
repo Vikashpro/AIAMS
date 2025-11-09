@@ -99,7 +99,7 @@ class DocumentTextExtractor
             return null;
         }
 
-        if (function_exists('mb_detect_encoding') && mb_detect_encoding($text, 'UTF-8', true) === false) {
+        if (mb_detect_encoding($text, 'UTF-8', true) === false) {
             return null;
         }
 

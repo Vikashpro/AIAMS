@@ -160,69 +160,55 @@ class Parser
             return $value;
         }
 
-        $encoding = null;
-
         $bom = substr($value, 0, 2);
+
         if ($bom === "\xFE\xFF") {
-            $encoding = 'UTF-16BE';
             $value = substr($value, 2);
-        } elseif ($bom === "\xFF\xFE") {
-            $encoding = 'UTF-16LE';
-            $value = substr($value, 2);
+
+            return mb_convert_encoding($value, 'UTF-8', 'UTF-16BE');
         }
 
-        if ($encoding === null && strpos($value, "\x00") !== false) {
-            $evenNulls = 0;
-            $oddNulls = 0;
-            $length = strlen($value);
+        if ($bom === "\xFF\xFE") {
+            $value = substr($value, 2);
 
-            for ($i = 0; $i < $length; $i += 2) {
-                if ($value[$i] === "\x00") {
-                    ++$evenNulls;
+            return mb_convert_encoding($value, 'UTF-8', 'UTF-16LE');
+        }
+
+        $length = strlen($value);
+
+        if ($length >= 2) {
+            $zeroCount = substr_count($value, "\x00");
+
+            if ($zeroCount >= ($length / 4)) {
+                $evenZeros = 0;
+                $oddZeros = 0;
+
+                for ($i = 0; $i < $length; $i++) {
+                    if ($value[$i] === "\x00") {
+                        if (($i % 2) === 0) {
+                            ++$evenZeros;
+                        } else {
+                            ++$oddZeros;
+                        }
+                    }
                 }
 
-                if ($i + 1 < $length && $value[$i + 1] === "\x00") {
-                    ++$oddNulls;
-                }
-            }
+                $encoding = $evenZeros >= $oddZeros ? 'UTF-16BE' : 'UTF-16LE';
 
-            if ($evenNulls > $oddNulls) {
-                $encoding = 'UTF-16BE';
-            } elseif ($oddNulls > $evenNulls) {
-                $encoding = 'UTF-16LE';
+                return mb_convert_encoding($value, 'UTF-8', $encoding);
             }
         }
 
-        if ($encoding === null && function_exists('mb_detect_encoding')) {
-            $detected = mb_detect_encoding(
-                $value,
-                ['UTF-8', 'UTF-16LE', 'UTF-16BE', 'Windows-1252', 'ISO-8859-1'],
-                true
-            );
+        $encoding = mb_detect_encoding($value, ['UTF-8', 'Windows-1252', 'ISO-8859-1'], true);
 
-            if (is_string($detected)) {
-                $encoding = $detected;
-            }
-        }
-
-        if ($encoding === null) {
-            $encoding = 'ISO-8859-1';
+        if ($encoding === false) {
+            $encoding = 'Windows-1252';
         }
 
         if ($encoding === 'UTF-8') {
-            if (function_exists('mb_check_encoding') && !mb_check_encoding($value, 'UTF-8')) {
-                $encoding = 'ISO-8859-1';
-            } else {
-                return $value;
-            }
+            return $value;
         }
 
-        if (function_exists('mb_convert_encoding')) {
-            return mb_convert_encoding($value, 'UTF-8', $encoding);
-        }
-
-        $converted = @iconv($encoding, 'UTF-8//IGNORE', $value);
-
-        return $converted === false ? $value : $converted;
+        return mb_convert_encoding($value, 'UTF-8', $encoding);
     }
 }
