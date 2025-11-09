@@ -59,7 +59,7 @@ class DocumentTextExtractor
     {
         $contents = preg_replace('/stream.*?endstream/s', ' ', $contents) ?? $contents;
 
-        preg_match_all('/\((?:\\.|[^\\()])*\)/s', $contents, $matches);
+        preg_match_all('/\((?:\\.|[^\\()])*\)\s*(?=\s*(?:Tj|TJ|\'|\"))/s', $contents, $matches);
 
         if (empty($matches[0])) {
             return null;
@@ -96,6 +96,10 @@ class DocumentTextExtractor
     protected function normalize(?string $text): ?string
     {
         if (!is_string($text)) {
+            return null;
+        }
+
+        if (mb_detect_encoding($text, 'UTF-8', true) === false) {
             return null;
         }
 

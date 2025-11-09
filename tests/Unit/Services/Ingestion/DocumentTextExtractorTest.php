@@ -40,4 +40,99 @@ PDF;
 
         $this->assertSame('Hello Compressed World!', $text);
     }
+
+    public function testItExtractsUtf16HexEncodedTextFromPdf(): void
+    {
+        if (!class_exists(\Smalot\PdfParser\Parser::class)) {
+            $this->markTestSkipped('smalot/pdfparser dependency is not available.');
+        }
+
+        $encodedPdf = <<<'PDF'
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxIC9LaWRzIFszIDAgUl0gPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA4MCA+PgpzdHJlYW0KQlQKL0YxIDI0IFRmCjcyIDEyMCBUZAo8RkVGRjAwNDgwMDY1MDA2QzAwNkMwMDZGMDAyMDAwNTUwMDU0MDA0NjAwMzEwMDM2PiBUagpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDM3MCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjQ0MAolJUVPRg==
+PDF;
+
+        $pdfContents = base64_decode($encodedPdf, true);
+        $this->assertIsString($pdfContents, 'Fixture base64 encoding should decode to a string.');
+
+        Storage::fake('ingest-docs');
+        Storage::disk('ingest-docs')->put('utf16-hex.pdf', $pdfContents);
+
+        $extractor = $this->app->make(DocumentTextExtractor::class);
+
+        $text = $extractor->extract('ingest-docs', 'utf16-hex.pdf');
+
+        $this->assertSame('Hello UTF16', $text);
+        $this->assertSame('UTF-8', mb_detect_encoding($text, 'UTF-8', true), 'Extracted text should be valid UTF-8.');
+    }
+
+    public function testItIgnoresNoiseOutsideTextOperators(): void
+    {
+        if (!class_exists(\Smalot\PdfParser\Parser::class)) {
+            $this->markTestSkipped('smalot/pdfparser dependency is not available.');
+        }
+
+        $encodedPdf = <<<'PDF'
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxIC9LaWRzIFszIDAgUl0gPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAzMDAg
+MDBdIC9Db250ZW50cyBbNCAwIFIgNSAwIFJdIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDYg
+MCBSID4+ID4+ID4+CmVuZG9iago0IDAgb2JqCjw8IC9MZW5ndGggNzAgPj4Kc3RyZWFtCkJUCi9G
+MSAyNCBUZgoyOCA3MjAgVGQKKFByaW1hcnkgVGV4dCkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iago1
+IDAgb2JqCjw8IC9MZW5ndGggNDAgPj4Kc3RyZWFtCihyYW5kb20gbm9pc2UpICUgKG5vIHRleHQg
+b3BlcmF0b3IpCihCYWQgVG9rZW4pCmVuZHN0cmVhbQplbmRvYmoKNiAwIG9iago8PCAvVHlwZSAv
+Rm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCiUlRU9G
+PDF;
+
+        $pdfContents = base64_decode($encodedPdf, true);
+        $this->assertIsString($pdfContents, 'Fixture base64 encoding should decode to a string.');
+
+        Storage::fake('ingest-docs');
+        Storage::disk('ingest-docs')->put('noisy.pdf', $pdfContents);
+
+        $extractor = $this->app->make(DocumentTextExtractor::class);
+
+        $text = $extractor->extract('ingest-docs', 'noisy.pdf');
+
+        $this->assertSame('Primary Text', $text);
+        $this->assertSame('UTF-8', mb_detect_encoding($text, 'UTF-8', true), 'Extracted text should be valid UTF-8.');
+    }
+
+    public function testItUsesToUnicodeMapsToDecodeGlyphs(): void
+    {
+        if (!class_exists(\Smalot\PdfParser\Parser::class)) {
+            $this->markTestSkipped('smalot/pdfparser dependency is not available.');
+        }
+
+        $encodedPdf = <<<'PDF'
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxIC9LaWRz
+IFszIDAgUl0gPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIg
+L1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA1MiA+PgpzdHJlYW0KQlQKL0YxIDI0IFRmCjcy
+IDEyMCBUZAo8MDAwMTAwMDIwMDAzMDAwMzAwMDU+IFRqCkVUCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTAgL0Jh
+c2VGb250IC9BQkNERUUrTXlGb250IC9FbmNvZGluZyAvSWRlbnRpdHktSCAvRGVzY2VuZGFudEZvbnRzIFs2IDAgUl0gL1RvVW5pY29kZSA3IDAgUiA+PgplbmRvYmoK
+NiAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvQ0lERm9udFR5cGUyIC9CYXNlRm9udCAvQUJDREVFK015Rm9udCAvQ0lEU3lzdGVtSW5mbyA8PCAvUmVnaXN0
+cnkgKEFkb2JlKSAvT3JkZXJpbmcgKElkZW50aXR5KSAvU3VwcGxlbWVudCAwID4+IC9XIFswIFs2MDBdXSAvRm9udERlc2NyaXB0b3IgOCAwIFIgPj4KZW5kb2JqCjcg
+MCBvYmoKPDwgL0xlbmd0aCAzNDggPj4Kc3RyZWFtCi9DSURJbml0IC9Qcm9jU2V0IGZpbmRyZXNvdXJjZSBiZWdpbgoxMiBkaWN0IGJlZ2luCmJlZ2luY21hcAovQ0lE
+U3lzdGVtSW5mbwo8PCAvUmVnaXN0cnkgKEFkb2JlKQovT3JkZXJpbmcgKElkZW50aXR5KQovU3VwcGxlbWVudCAwCj4+IGRlZgoxIGJlZ2luY29kZXNwYWNlcmFuZ2UK
+PDAwMDE+IDwwMDA1PgplbmRjb2Rlc3BhY2VyYW5nZQo1IGJlZ2luYmZjaGFyCjwwMDAxPiA8MDA0OD4KPDAwMDI+IDwwMDY1Pgo8MDAwMz4gPDAwNkM+CjwwMDA0PiA8
+MDA2Qz4KPDAwMDU+IDwwMDZGPgplbmRiZmNoYXIKZW5kY21hcApDTWFwTmFtZSBjdXJyZW50ZGljdCAvQ01hcCBkZWZpbmVyZXNvdXJjZSBwb3AKZW5kCmVuZAplbmRz
+dHJlYW0KZW5kb2JqCjggMCBvYmoKPDwgL1R5cGUgL0ZvbnREZXNjcmlwdG9yIC9Gb250TmFtZSAvQUJDREVFK015Rm9udCAvRmxhZ3MgNCAvQXNjZW50IDgwMCAvRGVz
+Y2VudCAtMjAwIC9DYXBIZWlnaHQgNzAwIC9JdGFsaWNBbmdsZSAwIC9TdGVtViA4MCAvRm9udEJCb3ggWzAgLTIwMCAxMDAwIDkwMF0gPj4KZW5kb2JqCnhyZWYKMCA5
+CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAw
+MCBuIAowMDAwMDAwMzQyIDAwMDAwIG4gCjAwMDAwMDA0ODAgMDAwMDAgbiAKMDAwMDAwMDY3MCAwMDAwMCBuIAowMDAwMDAxMDY5IDAwMDAwIG4gCnRyYWlsZXIKPDwg
+L1NpemUgOSAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKMTI0MAolJUVPRg==
+PDF;
+
+        $pdfContents = base64_decode($encodedPdf, true);
+        $this->assertIsString($pdfContents, 'Fixture base64 encoding should decode to a string.');
+
+        Storage::fake('ingest-docs');
+        Storage::disk('ingest-docs')->put('unicode-map.pdf', $pdfContents);
+
+        $extractor = $this->app->make(DocumentTextExtractor::class);
+
+        $text = $extractor->extract('ingest-docs', 'unicode-map.pdf');
+
+        $this->assertSame('Hello', $text);
+        $this->assertSame('UTF-8', mb_detect_encoding($text, 'UTF-8', true), 'Extracted text should be valid UTF-8.');
+    }
 }
